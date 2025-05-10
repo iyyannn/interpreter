@@ -9,22 +9,20 @@ class Token:
         self.value = value
 
     def __str__(self):
-        """String representation of the class instance."""
         return f'Token({self.type}, {repr(self.value)})'
 
     __repr__ = __str__
 
 class Lexer:
     def __init__(self, text):
-        self.text = text  # Input expression, e.g., "3 + 5"
-        self.pos = 0  # Index in text
+        self.text = text
+        self.pos = 0
         self.current_char = self.text[self.pos] if self.text else None
 
     def error(self):
         raise Exception('Invalid character')
 
     def advance(self):
-        """Advance the `pos` pointer and set `current_char`."""
         self.pos += 1
         self.current_char = self.text[self.pos] if self.pos < len(self.text) else None
 
@@ -33,7 +31,6 @@ class Lexer:
             self.advance()
 
     def integer(self):
-        """Return a (multidigit) integer consumed from input."""
         result = ''
         while self.current_char is not None and self.current_char.isdigit():
             result += self.current_char
@@ -41,7 +38,6 @@ class Lexer:
         return int(result)
 
     def get_next_token(self):
-        """Lexical analyzer - Tokenizes the input expression."""
         while self.current_char is not None:
             if self.current_char.isspace():
                 self.skip_whitespace()
@@ -78,6 +74,27 @@ class Lexer:
 
         return Token(EOF, None)
 
+# AST Node classes
+class AST(object):
+    pass
+
+class BinOp(AST):
+    def __init__(self, left, op, right):
+        self.left = left
+        self.token = self.op = op
+        self.right = right
+
+class UnaryOp(AST):
+    def __init__(self, op, expr):
+        self.token = self.op = op
+        self.expr = expr
+
+class Num(AST):
+    def __init__(self, token):
+        self.token = token
+        self.value = token.value
+
+# Parser
 class Parser(object):
     def __init__(self, lexer):
         self.lexer = lexer
@@ -87,16 +104,21 @@ class Parser(object):
         raise Exception('Invalid syntax')
 
     def eat(self, token_type):
-        """Check if current token type matches expected, then consume it."""
         if self.current_token.type == token_type:
             self.current_token = self.lexer.get_next_token()
         else:
             self.error()
 
     def factor(self):
-        """factor : INTEGER | LPAREN expr RPAREN"""
+        """factor : (PLUS|MINUS) factor | INTEGER | LPAREN expr RPAREN"""
         token = self.current_token
-        if token.type == INTEGER:
+        if token.type == PLUS:
+            self.eat(PLUS)
+            return UnaryOp(token, self.factor())
+        elif token.type == MINUS:
+            self.eat(MINUS)
+            return UnaryOp(token, self.factor())
+        elif token.type == INTEGER:
             self.eat(INTEGER)
             return Num(token)
         elif token.type == LPAREN:
@@ -113,7 +135,6 @@ class Parser(object):
             token = self.current_token
             if token.type == MUL:
                 self.eat(MUL)
-                
             elif token.type == DIV:
                 self.eat(DIV)
             node = BinOp(left=node, op=token, right=self.factor())
@@ -129,17 +150,56 @@ class Parser(object):
             elif token.type == MINUS:
                 self.eat(MINUS)
             node = BinOp(left=node, op=token, right=self.term()) 
-      
         return node
+
     def parse(self):
         return self.expr()
 
+# Interpreter
+class NodeVisitor(object):
+    def visit(self, node):
+        method_name = 'visit_' + type(node).__name__
+        visitor = getattr(self, method_name, self.generic_visit)
+        return visitor(node)
+
+    def generic_visit(self, node):
+        raise Exception('No visit_{} method'.format(type(node).__name__))
+
+class Interpreter(NodeVisitor):
+    def __init__(self, parser):
+        self.parser = parser
+
+    def visit_BinOp(self, node):
+        if node.op.type == PLUS:
+            return self.visit(node.left) + self.visit(node.right)
+        elif node.op.type == MINUS:
+            return self.visit(node.left) - self.visit(node.right)
+        elif node.op.type == MUL:
+            return self.visit(node.left) * self.visit(node.right)
+        elif node.op.type == DIV:
+            return self.visit(node.left) / self.visit(node.right)
+
+    def visit_Num(self, node):
+        return node.value
+
+    def visit_UnaryOp(self, node):
+        op_type = node.op.type
+        if op_type == PLUS:
+            return +self.visit(node.expr)
+        elif op_type == MINUS:
+            return -self.visit(node.expr)
+
+    def interpret(self):
+        tree = self.parser.parse()
+        return self.visit(tree)
+
+# Entry point
 def main():
     while True:
         try:
             try:
                 text = raw_input('spi> ')
-            except NameError:  # Python 3
+            except NameError:
                 text = input('spi> ')
         except EOFError:
             break
@@ -152,51 +212,5 @@ def main():
         result = interpreter.interpret()
         print(result)
 
-
-
-class AST(object):
-    pass
-
-class BinOp(AST):
-    def __init__(self, left, op, right):
-        self.left = left
-        self.token = self.op = op
-        self.right = right
-
-class Num(AST):
-    def __init__(self, token):
-        self.token = token
-        self.value = token.value
-
-class NodeVisitor(object):
-    def visit(self, node):
-        method_name = 'visit_' + type(node).__name__
-        visitor = getattr(self, method_name, self.generic_visit)
-        return visitor(node)
-
-    def generic_visit(self, node):
-        raise Exception('No_visit{} method'.format(type(node).__name__))
-
-class Interpreter(NodeVisitor):
-    def __init__(self, parse):
-        self.parser = parse
-
-    def visit_BinOp(self, node):
-        if node.op.type ==  PLUS:
-            return self.visit(node.left) + self.visit(node.right)
-        elif node.op.type == MINUS:
-            return self.visit(node.left) - self.visit(node.right)
-        elif node.op.type == MUL:
-            return self.visit(node.left) * self.visit(node.right)
-        elif node.op.type == DIV:
-            return self.visit(node.left) / self.visit(node.right)
-
-    def visit_Num(self, node):
-        return node.value
-    
-    def interpret(self):
-        tree = self.parser.parse()
-        return self.visit(tree)
-    
 if __name__ == '__main__':
     main()
